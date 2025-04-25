@@ -1,0 +1,67 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_CREDENTIALS = credentials('dockerhub-credentials')  // Set Jenkins credentials for DockerHub
+        DOCKER_IMAGE = "zain0610/cw2-server:1.0"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git 'https://github.com/<your-username>/<your-repo>.git'  // Replace with your GitHub repo
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh 'docker build -t $DOCKER_IMAGE .'  // Build the Docker image using Dockerfile
+                }
+            }
+        }
+
+        stage('Test Container') {
+            steps {
+                script {
+                    // Run the container and test if it can launch
+                    sh 'docker run -d --name cw2-server-test $DOCKER_IMAGE'  // Run the container in detached mode
+                    sh 'docker ps -a'  // List containers to ensure it's running
+                    sh 'docker exec cw2-server-test echo "Container is running!"'  // Run a command inside the container
+                    sh 'docker stop cw2-server-test && docker rm cw2-server-test'  // Cleanup
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    // Push the Docker image to DockerHub
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        sh 'docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD'
+                        sh 'docker push $DOCKER_IMAGE'
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    // Deploy the Docker image to Kubernetes (use your deployment name and namespace)
+                    sh 'kubectl set image deployment/cw2-server-deployment cw2-server=$DOCKER_IMAGE'
+                    sh 'kubectl rollout status deployment/cw2-server-deployment'  // Ensure deployment is successful
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Build, test, push, and deployment were successful.'
+        }
+        failure {
+            echo 'Build, test, or deployment failed.'
+        }
+    }
+}
